@@ -2,7 +2,7 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>哨兵嚮導原型 v0.2</title>
+<title>哨兵嚮導原型 v0.4</title>
 <style>
   body { font-family: -apple-system, sans-serif; background: #111; color: #eee; padding: 20px; max-width: 480px; margin: auto; }
   .card { background: #1e1e1e; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
@@ -11,14 +11,23 @@
   .bar-label { font-size: 13px; color: #aaa; display: flex; justify-content: space-between; }
   .bar-bg { background: #333; border-radius: 6px; height: 8px; overflow: hidden; }
   .bar-fill { height: 100%; background: #7aa2f7; transition: width 0.3s; }
+  .bar-fill.quest { background: #6cbf7f; }
   button { background: #2b2b3d; color: #eee; border: none; padding: 10px 14px; border-radius: 8px; margin-right: 8px; margin-top: 10px; cursor: pointer; }
   button:hover { background: #3b3b52; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
   #timeline-list { font-size: 14px; color: #ccc; padding-left: 18px; }
+  .quest-status { font-size: 13px; color: #6cbf7f; margin-top: 6px; }
+  .clue-list { list-style: none; padding: 0; margin: 10px 0 0 0; }
+  .clue-list li { font-size: 14px; padding: 6px 0; border-bottom: 1px solid #2a2a2a; color: #666; }
+  .clue-list li.found { color: #eee; }
+  .clue-list li.found::before { content: "✓ "; color: #6cbf7f; }
+  .clue-list li:not(.found)::before { content: "? "; color: #555; }
 </style>
 </head>
 <body>
 
-  <button onclick="doAction('soothe')">精神疏導</button>
+<div id="quest-card"></div>
+<div id="case-card"></div>
 <div id="npc-cards"></div>
 
 <div class="card">
@@ -29,6 +38,22 @@
 <script>
 let day = 1;
 let timeline = [];
+
+let quest = {
+  title: "異常精神波事件調查案",
+  progress: 0,
+  maxProgress: 8
+};
+
+let caseFile = {
+  title: "案件調查：異常精神波事件",
+  clues: [
+    { title: "現場遺留的精神殘留波紋", found: false },
+    { title: "受害者最後聯絡紀錄", found: false },
+    { title: "目擊者描述的黑影特徵", found: false },
+    { title: "塔內部的異常任務派遣紀錄", found: false }
+  ]
+};
 
 let npcs = {
   guchengye: {
@@ -45,7 +70,40 @@ let npcs = {
 
 const labels = { trust: "信任", respect: "尊重", attraction: "吸引", dependence: "依賴" };
 
+function renderQuest() {
+  const el = document.getElementById('quest-card');
+  const pct = Math.min(100, (quest.progress / quest.maxProgress) * 100);
+  const done = quest.progress >= quest.maxProgress;
+  el.innerHTML = `
+    <div class="card">
+      <h2>${quest.title}</h2>
+      <div class="bar-row">
+        <div class="bar-label"><span>進度</span><span>${quest.progress} / ${quest.maxProgress}</span></div>
+        <div class="bar-bg"><div class="bar-fill quest" style="width:${pct}%"></div></div>
+      </div>
+      ${done ? '<div class="quest-status">任務完成</div>' : ''}
+    </div>`;
+}
+
+function renderCase() {
+  const el = document.getElementById('case-card');
+  const allFound = caseFile.clues.every(c => c.found);
+  const cluesHtml = caseFile.clues.map(c =>
+    `<li class="${c.found ? 'found' : ''}">${c.found ? c.title : '未知線索'}</li>`
+  ).join('');
+  el.innerHTML = `
+    <div class="card">
+      <h2>${caseFile.title}</h2>
+      <ul class="clue-list">${cluesHtml}</ul>
+      <button onclick="searchClue()" ${allFound ? 'disabled' : ''}>搜查線索</button>
+      ${allFound ? '<div class="quest-status">線索齊全</div>' : ''}
+    </div>`;
+}
+
 function render() {
+  renderQuest();
+  renderCase();
+
   const container = document.getElementById('npc-cards');
   container.innerHTML = '';
   for (const id in npcs) {
@@ -78,12 +136,25 @@ function doAction(npcId, type) {
   if (type === 'mission') {
     npc.trust += 5;
     npc.respect += 2;
-    timeline.push({ day, event: `與${npc.name}一起出任務` });
+    if (quest.progress < quest.maxProgress) {
+      quest.progress += 1;
+    }
+    timeline.push({ day, event: `與${npc.name}一起出任務，案件調查推進` });
   } else if (type === 'soothe') {
     npc.attraction += 5;
     npc.dependence += 3;
     timeline.push({ day, event: `為${npc.name}進行精神疏導` });
   }
+  render();
+}
+
+function searchClue() {
+  const unfound = caseFile.clues.filter(c => !c.found);
+  if (unfound.length === 0) return;
+  day++;
+  const pick = unfound[Math.floor(Math.random() * unfound.length)];
+  pick.found = true;
+  timeline.push({ day, event: `發現線索：${pick.title}` });
   render();
 }
 
