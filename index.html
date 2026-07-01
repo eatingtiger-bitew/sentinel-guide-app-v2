@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>哨兵嚮導原型 v0.1</title>
+<style>
+  body { font-family: -apple-system, sans-serif; background: #111; color: #eee; padding: 20px; max-width: 480px; margin: auto; }
+  .card { background: #1e1e1e; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  h2 { margin-top: 0; font-size: 18px; }
+  .bar-row { margin: 8px 0; }
+  .bar-label { font-size: 13px; color: #aaa; display: flex; justify-content: space-between; }
+  .bar-bg { background: #333; border-radius: 6px; height: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; background: #7aa2f7; transition: width 0.3s; }
+  button { background: #2b2b3d; color: #eee; border: none; padding: 10px 14px; border-radius: 8px; margin-right: 8px; margin-top: 10px; cursor: pointer; }
+  button:hover { background: #3b3b52; }
+  #timeline-list { font-size: 14px; color: #ccc; padding-left: 18px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>顧承夜</h2>
+  <p style="color:#888; font-size:13px;">S 級哨兵・特勤隊長</p>
+  <div id="stats"></div>
+  <button onclick="doAction('mission')">一起出任務</button>
+  <button onclick="doAction('soothe')">精神疏導</button>
+</div>
+
+<div class="card">
+  <h2>世界年表</h2>
+  <ol id="timeline-list"></ol>
+</div>
+
+<script>
+let day = 1;
+let npc = {
+  trust: 15,
+  respect: 30,
+  attraction: 5,
+  dependence: 0
+};
+let timeline = [];
+
+const labels = { trust: "信任", respect: "尊重", attraction: "吸引", dependence: "依賴" };
+
+function render() {
+  const statsDiv = document.getElementById('stats');
+  statsDiv.innerHTML = '';
+  for (const key in labels) {
+    statsDiv.innerHTML += `
+      <div class="bar-row">
+        <div class="bar-label"><span>${labels[key]}</span><span>${npc[key]}</span></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${npc[key]}%"></div></div>
+      </div>`;
+  }
+  const listEl = document.getElementById('timeline-list');
+  listEl.innerHTML = timeline.map(t => `<li>Day ${t.day}：${t.event}</li>`).join('');
+}
+
+function doAction(type) {
+  day++;
+  if (type === 'mission') {
+    npc.trust += 5;
+    npc.respect += 2;
+    timeline.push({ day, event: "與顧承夜一起出任務" });
+  } else if (type === 'soothe') {
+    npc.attraction += 5;
+    npc.dependence += 3;
+    timeline.push({ day, event: "為顧承夜進行精神疏導" });
+  }
+  render();
+}
+
+render();
+</script>
+
+</body>
+</html>
