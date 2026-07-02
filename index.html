@@ -78,6 +78,7 @@
       <div class="card">
         <h2>劇情</h2>
         <div id="mini-quest-bar"></div>
+        <div id="mini-case-card"></div>
         <div id="story-box">輸入你想做的事,故事會從這裡展開。</div>
         <input id="ai-input" type="text" placeholder="例如：我想去找顧承夜討論案情">
         <button onclick="sendToAI()">送出</button>
@@ -117,6 +118,9 @@
 <script src="config.js"></script>
 <script>
 const GEMINI_MODEL = "gemini-2.5-flash";
+
+// AI 是否正在生成中，用來擋掉結案／送出按鈕被連點造成重複請求
+let isGenerating = false;
 
 let day = 1;
 let timeline = [];
@@ -226,6 +230,28 @@ function renderMiniQuestBar() {
     </div>`;
 }
 
+function renderMiniCase() {
+  const el = document.getElementById('mini-case-card');
+  const foundCount = caseFile.clues.filter(c => c.found).length;
+  const total = caseFile.clues.length;
+  const allFound = foundCount === total;
+
+  let statusHtml = '';
+  if (caseClosed) {
+    statusHtml = '<div class="quest-status">已結案</div>';
+  } else if (isGenerating) {
+    statusHtml = '<div class="loading">生成中，請稍候...</div>';
+  } else if (allFound) {
+    statusHtml = '<button onclick="resolveCase()">向顧承夜回報，結案</button>';
+  }
+
+  el.innerHTML = `
+    <div class="mini-quest-bar">
+      <div class="mini-quest-label"><span>${caseFile.title}</span><span>${foundCount} / ${total} 線索</span></div>
+      ${statusHtml}
+    </div>`;
+}
+
 function renderQuest() {
   const el = document.getElementById('quest-card');
   const typeLabels = { main: "主線", side: "支線" };
@@ -254,6 +280,8 @@ function renderCase() {
   let actionHtml = '';
   if (caseClosed) {
     actionHtml = '<div class="quest-status">已結案</div>';
+  } else if (isGenerating) {
+    actionHtml = '<div class="loading">生成中，請稍候...</div>';
   } else if (allFound) {
     actionHtml = `<div class="quest-status">線索齊全</div><button onclick="resolveCase()">向顧承夜回報，結案</button>`;
   } else {
@@ -272,6 +300,7 @@ function render() {
   renderQuest();
   renderCase();
   renderMiniQuestBar();
+  renderMiniCase();
 
   const questBadge = document.getElementById('quest-badge');
   const isQuestTabActive = document.getElementById('tab-quest').classList.contains('active');
@@ -333,6 +362,7 @@ function searchClue() {
 }
 
 async function resolveCase() {
+  if (isGenerating) return;
   const input = document.getElementById('ai-input');
   input.value = `我已經蒐集齊所有線索（${caseFile.clues.map(c => c.title).join('、')}），我要向顧承夜回報，準備結案`;
   await sendToAI();
@@ -358,13 +388,16 @@ function buildWorldState() {
 }
 
 async function sendToAI() {
+  if (isGenerating) return;
   const input = document.getElementById('ai-input');
   const statusEl = document.getElementById('ai-status');
   const text = input.value.trim();
   if (!text) return;
 
+  isGenerating = true;
   statusEl.innerHTML = '<div class="loading">生成中...</div>';
   input.disabled = true;
+  render(); // 立即讓案件卡／任務卡的按鈕切換成「生成中」狀態
 
   const worldState = buildWorldState();
 
@@ -445,6 +478,8 @@ worldUpdates 陣列可以是空陣列，也可以包含多筆。如果行動與�
     console.error(err);
   } finally {
     input.disabled = false;
+    isGenerating = false;
+    render();
   }
 }
 </script>
