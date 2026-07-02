@@ -84,6 +84,7 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 
 let day = 1;
 let timeline = [];
+let caseClosed = false;
 
 let player = {
   name: "",
@@ -162,12 +163,21 @@ function renderCase() {
   const cluesHtml = caseFile.clues.map(c =>
     `<li class="${c.found ? 'found' : ''}">${c.found ? c.title : '未知線索'}</li>`
   ).join('');
+
+  let actionHtml = '';
+  if (caseClosed) {
+    actionHtml = '<div class="quest-status">已結案</div>';
+  } else if (allFound) {
+    actionHtml = `<div class="quest-status">線索齊全</div><button onclick="resolveCase()">向顧承夜回報，結案</button>`;
+  } else {
+    actionHtml = `<button onclick="searchClue()">搜查線索</button>`;
+  }
+
   el.innerHTML = `
     <div class="card">
       <h2>${caseFile.title}</h2>
       <ul class="clue-list">${cluesHtml}</ul>
-      <button onclick="searchClue()" ${allFound ? 'disabled' : ''}>搜查線索</button>
-      ${allFound ? '<div class="quest-status">線索齊全</div>' : ''}
+      ${actionHtml}
     </div>`;
 }
 
@@ -226,6 +236,15 @@ function searchClue() {
   const pick = unfound[Math.floor(Math.random() * unfound.length)];
   pick.found = true;
   timeline.push({ day, event: `發現線索：${pick.title}` });
+  render();
+}
+
+async function resolveCase() {
+  const input = document.getElementById('ai-input');
+  input.value = `我已經蒐集齊所有線索（${caseFile.clues.map(c => c.title).join('、')}），我要向顧承夜回報，準備結案`;
+  await sendToAI();
+  caseClosed = true;
+  quest.progress = quest.maxProgress;
   render();
 }
 
