@@ -2,9 +2,10 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<title>哨兵嚮導原型 v0.6</title>
+<title>哨兵嚮導原型 v0.7</title>
 <style>
-  body { font-family: -apple-system, sans-serif; background: #111; color: #eee; padding: 20px; max-width: 480px; margin: auto; }
+  body { font-family: -apple-system, sans-serif; background: #111; color: #eee; padding: 0; margin: 0; }
+  .content-wrap { padding: 16px; max-width: 480px; margin: auto; padding-bottom: 80px; }
   .card { background: #1e1e1e; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
   h2 { margin-top: 0; font-size: 18px; }
   .bar-row { margin: 8px 0; }
@@ -29,57 +30,85 @@
   .field-label { font-size: 13px; color: #aaa; }
   .player-tag { font-size: 13px; color: #888; margin-top: -4px; margin-bottom: 10px; }
   #game-screen { display: none; }
+
+  /* 分頁籤 */
+  .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #1a1a1a; display: flex; border-top: 1px solid #2a2a2a; max-width: 480px; margin: auto; }
+  .tab-btn { flex: 1; text-align: center; padding: 14px 0; color: #777; font-size: 13px; background: none; border: none; border-radius: 0; margin: 0; cursor: pointer; }
+  .tab-btn.active { color: #7aa2f7; font-weight: bold; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
 </style>
-
-<script src="config.js"></script>
-
 </head>
 <body>
 
 <div id="create-screen">
-  <div class="card">
-    <h2>創建角色</h2>
-    <p style="color:#888; font-size:13px;">B 級嚮導・嚮導學院應屆畢業生，資質被視為平凡，直到某日「塔」發布通知——顧承夜指名要見你。</p>
-    <div class="field-label">姓名</div>
-    <input id="player-name" type="text" placeholder="請輸入你的名字">
-    <div class="field-label">性別</div>
-    <select id="player-gender">
-      <option value="male">男</option>
-      <option value="female">女</option>
-      <option value="other">其他 / 不指定</option>
-    </select>
-    <button onclick="createPlayer()">開始遊戲</button>
+  <div class="content-wrap">
+    <div class="card">
+      <h2>創建角色</h2>
+      <p style="color:#888; font-size:13px;">B 級嚮導・嚮導學院應屆畢業生，資質被視為平凡，直到某日「塔」發布通知——顧承夜指名要見你。</p>
+      <div class="field-label">姓名</div>
+      <input id="player-name" type="text" placeholder="請輸入你的名字">
+      <div class="field-label">性別</div>
+      <select id="player-gender">
+        <option value="male">男</option>
+        <option value="female">女</option>
+        <option value="other">其他 / 不指定</option>
+      </select>
+      <button onclick="createPlayer()">開始遊戲</button>
+    </div>
   </div>
 </div>
 
 <div id="game-screen">
+  <div class="content-wrap">
 
-<div class="card">
-  <h2 id="player-header"></h2>
-  <div class="player-tag">B 級嚮導・嚮導學院應屆畢業生</div>
+    <div class="card">
+      <h2 id="player-header"></h2>
+      <div class="player-tag">B 級嚮導・嚮導學院應屆畢業生</div>
+    </div>
+
+    <!-- 劇情分頁 -->
+    <div class="tab-panel active" id="tab-story">
+      <div class="card">
+        <h2>劇情</h2>
+        <div id="story-box">輸入你想做的事,故事會從這裡展開。</div>
+        <input id="ai-input" type="text" placeholder="例如：我想去找顧承夜討論案情">
+        <button onclick="sendToAI()">送出</button>
+        <div id="ai-status"></div>
+      </div>
+    </div>
+
+    <!-- 角色分頁 -->
+    <div class="tab-panel" id="tab-npc">
+      <div id="npc-cards"></div>
+    </div>
+
+    <!-- 任務分頁 -->
+    <div class="tab-panel" id="tab-quest">
+      <div id="quest-card"></div>
+      <div id="case-card"></div>
+    </div>
+
+    <!-- 年表分頁 -->
+    <div class="tab-panel" id="tab-timeline">
+      <div class="card">
+        <h2>世界年表</h2>
+        <ol id="timeline-list"></ol>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('story', this)">劇情</button>
+    <button class="tab-btn" onclick="switchTab('npc', this)">角色</button>
+    <button class="tab-btn" onclick="switchTab('quest', this)">任務</button>
+    <button class="tab-btn" onclick="switchTab('timeline', this)">年表</button>
+  </div>
 </div>
 
-<div class="card">
-  <h2>劇情</h2>
-  <div id="story-box">輸入你想做的事,故事會從這裡展開。</div>
-  <input id="ai-input" type="text" placeholder="例如：我想去找顧承夜討論案情">
-  <button onclick="sendToAI()">送出</button>
-  <div id="ai-status"></div>
-</div>
-
-<div id="quest-card"></div>
-<div id="case-card"></div>
-<div id="npc-cards"></div>
-
-<div class="card">
-  <h2>世界年表</h2>
-  <ol id="timeline-list"></ol>
-</div>
-
-</div>
-
+<script src="config.js"></script>
 <script>
-// ⚠️ 這是原型階段暫用寫法，金鑰會暴露在前端，正式上線前必須換成後端保管
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 let day = 1;
@@ -124,6 +153,13 @@ let npcs = {
 
 const labels = { trust: "信任", respect: "尊重", attraction: "吸引", dependence: "依賴" };
 const genderLabels = { male: "男", female: "女", other: "其他" };
+
+function switchTab(tabId, btnEl) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.add('active');
+  btnEl.classList.add('active');
+}
 
 function createPlayer() {
   const nameInput = document.getElementById('player-name');
