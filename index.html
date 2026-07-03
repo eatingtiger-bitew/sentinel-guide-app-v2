@@ -263,6 +263,7 @@ function checkLoveEventTrigger(npcId) {
   if (npc.attraction >= LOVE_EVENT_THRESHOLD) {
     npc.loveEventTriggered = true; // 立刻鎖定，避免同一角色因後續數值變動重複觸發
     pendingLoveEvent = npcId;
+    storyUpdatedFlag = true; // 判定當下就亮紅點，不等AI生成完成，避免玩家不知情持續點擊
   }
 }
 
@@ -611,9 +612,6 @@ new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展
     day++;
     const eventLabel = isLoveEvent ? `${npcs[loveEventNpcId].name}心動時刻` : (result.summary || text);
     timeline.push({ day, event: eventLabel });
-    if (isLoveEvent) {
-      storyUpdatedFlag = true; // 心動事件可能是在角色分頁被觸發，提醒玩家回劇情分頁查看
-    }
 
     (result.worldUpdates || []).forEach(u => {
       if (isLoveEvent && u.type !== 'relation') return; // 心動事件是獨立過場，不應該夾帶案件或任務的進度變化
