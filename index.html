@@ -169,6 +169,41 @@ function updateQuestProgress(questId, amount) {
   questUpdatedFlag = true;
 }
 
+// 觸發新支線的規則（系統把關，AI不可自行決定）：
+// 主線任務必須已完成，且目前不能有另一條進行中的支線，避免任務無限堆疊
+function canTriggerNewQuest() {
+  const mainQuest = getMainQuest();
+  if (!mainQuest || mainQuest.status !== "completed") return false;
+  const hasActiveSide = quests.some(q => q.type === "side" && q.status === "active");
+  return !hasActiveSide;
+}
+
+// 新增支線任務：id 一律由系統排號，AI只需提供標題與建議完成長度
+function addNewQuest(title, maxProgress) {
+  if (!canTriggerNewQuest()) {
+    console.warn('拒絕觸發新任務：主線尚未完成，或已有進行中的支線');
+    return false;
+  }
+  if (typeof title !== 'string' || !title.trim()) {
+    console.warn('拒絕觸發新任務：標題為空', title);
+    return false;
+  }
+  let mp = Number(maxProgress);
+  if (!Number.isFinite(mp) || mp < 3 || mp > 10) {
+    mp = 5; // AI給的數字不合理時，系統給一個安全的預設值
+  }
+  quests.push({
+    id: `quest_${quests.length + 1}`,
+    title: title.trim(),
+    type: "side",
+    status: "active",
+    progress: 0,
+    maxProgress: mp
+  });
+  questUpdatedFlag = true;
+  return true;
+}
+
 let caseFile = {
   title: "案件調查：異常精神波事件",
   clues: [
@@ -251,12 +286,14 @@ function createPlayer() {
 
 function renderMiniQuestBar() {
   const el = document.getElementById('mini-quest-bar');
-  const mainQuest = getMainQuest();
-  if (!mainQuest) { el.innerHTML = ''; return; }
-  const pct = Math.min(100, (mainQuest.progress / mainQuest.maxProgress) * 100);
+  // 有進行中的支線就優先顯示支線，否則顯示主線（避免主線結案後劇情頁一直停在「已完成」畫面）
+  const activeSide = quests.find(q => q.type === "side" && q.status === "active");
+  const targetQuest = activeSide || getMainQuest();
+  if (!targetQuest) { el.innerHTML = ''; return; }
+  const pct = Math.min(100, (targetQuest.progress / targetQuest.maxProgress) * 100);
   el.innerHTML = `
     <div class="mini-quest-bar">
-      <div class="mini-quest-label"><span>${mainQuest.title}</span><span>${mainQuest.progress} / ${mainQuest.maxProgress}</span></div>
+      <div class="mini-quest-label"><span>${targetQuest.title}</span><span>${targetQuest.progress} / ${targetQuest.maxProgress}</span></div>
       <div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${pct}%"></div></div>
     </div>`;
 }
@@ -413,6 +450,7 @@ function buildWorldState() {
     day,
     player,
     quests,
+    canTriggerNewQuest: canTriggerNewQuest(),
     caseFile,
     npcs
   };
@@ -459,11 +497,13 @@ ${JSON.stringify(worldState)}
     { "type": "relation", "npcId": "guchengye 或 qinyao", "attribute": "trust 或 respect 或 attraction 或 dependence", "amount": 數字（可正可負） },
     { "type": "quest", "questId": "quests 陣列裡對應任務的 id", "amount": 數字（可正可負） },
     { "type": "clue", "clueIndex": "caseFile.clues 陣列中的索引（從0開始），必須選一個 found 為 false、且內容與這次劇情最相關的線索，不要隨便選第一個" },
-    { "type": "new_npc", "npcId": "新角色的英文/拼音代稱，需唯一，只能用英文字母數字底線", "name": "新角色姓名", "role": "身份定位，例如：哨兵、嚮導、塔內部人員等" }
+    { "type": "new_npc", "npcId": "新角色的英文/拼音代稱，需唯一，只能用英文字母數字底線", "name": "新角色姓名", "role": "身份定位，例如：哨兵、嚮導、塔內部人員等" },
+    { "type": "new_quest", "title": "新支線任務的標題", "maxProgress": 完成這條支線大約需要幾次互動推進，建議3到10之間的整數 }
   ]
 }
 worldUpdates 陣列可以是空陣列，也可以包含多筆。如果行動與案件無關，就不要加 quest 或 clue 類型。
-new_npc 只能在劇情明確讓一位「全新的、有名有姓」的角色登場並產生互動時才使用，不要每次對話都生成新角色，也不要重複生成已經存在於目前 NPC 清單中的角色。`;
+new_npc 只能在劇情明確讓一位「全新的、有名有姓」的角色登場並產生互動時才使用，不要每次對話都生成新角色，也不要重複生成已經存在於目前 NPC 清單中的角色。
+new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展合理地帶出一個新的調查方向或委託時才使用；如果 canTriggerNewQuest 為 false，絕對不要提出新任務，即使劇情看起來很適合開新支線。`;
 
   try {
     const response = await fetch(
@@ -513,6 +553,8 @@ new_npc 只能在劇情明確讓一位「全新的、有名有姓」的角色登
         if (target) target.found = true;
       } else if (u.type === 'new_npc') {
         addNewNpc(u.npcId, u.name, u.role);
+      } else if (u.type === 'new_quest') {
+        addNewQuest(u.title, u.maxProgress);
       }
     });
 
