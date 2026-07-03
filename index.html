@@ -155,18 +155,33 @@ function getMainQuest() {
   return quests.find(q => q.type === "main");
 }
 
+// 「目前真正在跑的任務」：有進行中的支線就優先算支線，
+// 否則主線還沒完成就算主線，兩者都沒有就回傳 null（代表現在沒有可推進的任務）
+function getActiveQuest() {
+  const activeSide = quests.find(q => q.type === "side" && q.status === "active");
+  if (activeSide) return activeSide;
+  const mainQuest = getMainQuest();
+  if (mainQuest && mainQuest.status === "active") return mainQuest;
+  return null;
+}
+
 // 任務進度是否有未讀更新，控制任務分頁籤的紅點提示
 let questUpdatedFlag = false;
 
 // 依 id 更新任務進度，並在達標時自動標記完成
+// 只有「進度或狀態真的變了」才亮紅點提示，避免對已完成任務加分時憑空亮紅點卻沒有任何實際變化
 function updateQuestProgress(questId, amount) {
   const q = quests.find(q => q.id === questId);
   if (!q) return;
+  const oldProgress = q.progress;
+  const oldStatus = q.status;
   q.progress = Math.max(0, Math.min(q.maxProgress, q.progress + amount));
   if (q.progress >= q.maxProgress) {
     q.status = "completed";
   }
-  questUpdatedFlag = true;
+  if (q.progress !== oldProgress || q.status !== oldStatus) {
+    questUpdatedFlag = true;
+  }
 }
 
 // 觸發新支線的規則（系統把關，AI不可自行決定）：
@@ -286,7 +301,8 @@ function createPlayer() {
 
 function renderMiniQuestBar() {
   const el = document.getElementById('mini-quest-bar');
-  // 有進行中的支線就優先顯示支線，否則顯示主線（避免主線結案後劇情頁一直停在「已完成」畫面）
+  // 這裡故意不用 getActiveQuest()：getActiveQuest 是「還能不能被推進」的判斷（全部完成時回傳null），
+  // 但這裡是「顯示用」，主線全部結束、沒有支線時，畫面還是要保留主線的「已完成」狀態，不能整塊消失
   const activeSide = quests.find(q => q.type === "side" && q.status === "active");
   const targetQuest = activeSide || getMainQuest();
   if (!targetQuest) { el.innerHTML = ''; return; }
@@ -406,9 +422,9 @@ function doAction(npcId, type) {
   if (type === 'mission') {
     npc.trust += 5;
     npc.respect += 2;
-    const mainQuest = getMainQuest();
-    if (mainQuest) {
-      updateQuestProgress(mainQuest.id, 1);
+    const activeQuest = getActiveQuest();
+    if (activeQuest) {
+      updateQuestProgress(activeQuest.id, 1);
     }
     timeline.push({ day, event: `與${npc.name}一起出任務，案件調查推進` });
   } else if (type === 'soothe') {
