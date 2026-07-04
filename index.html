@@ -17,6 +17,10 @@
   button:hover { background: #3b3b52; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   #timeline-list { font-size: 14px; color: #ccc; padding-left: 18px; }
+  .timeline-main { color: #7aa2f7; }
+  .timeline-side { color: #8fd19e; }
+  .timeline-love { color: #e08fb0; }
+  .timeline-general { color: #ccc; }
   .quest-status { font-size: 13px; color: #6cbf7f; margin-top: 6px; }
   .clue-list { list-style: none; padding: 0; margin: 10px 0 0 0; }
   .clue-list li { font-size: 14px; padding: 6px 0; border-bottom: 1px solid #2a2a2a; color: #666; }
@@ -456,7 +460,7 @@ function render() {
   }
 
   const listEl = document.getElementById('timeline-list');
-  listEl.innerHTML = timeline.map(t => `<li>Day ${t.day}：${t.event}</li>`).join('');
+  listEl.innerHTML = timeline.map(t => `<li class="timeline-${t.type || 'general'}">Day ${t.day}：${t.event}</li>`).join('');
 }
 
 function doAction(npcId, type) {
@@ -469,12 +473,12 @@ function doAction(npcId, type) {
     if (activeQuest) {
       updateQuestProgress(activeQuest.id, 1);
     }
-    timeline.push({ day, event: `與${npc.name}一起出任務，案件調查推進` });
+    timeline.push({ day, event: `與${npc.name}一起出任務，案件調查推進`, type: activeQuest ? activeQuest.type : 'general' });
   } else if (type === 'soothe') {
     adjustRelation(npc, 'attraction', 5);
     adjustRelation(npc, 'dependence', 3);
     checkLoveEventTrigger(npcId);
-    timeline.push({ day, event: `為${npc.name}進行精神疏導` });
+    timeline.push({ day, event: `為${npc.name}進行精神疏導`, type: 'general' });
   }
   render();
   if (pendingLoveEvent) {
@@ -490,7 +494,7 @@ function searchClue() {
   day++;
   const pick = unfound[Math.floor(Math.random() * unfound.length)];
   pick.found = true;
-  timeline.push({ day, event: `發現線索：${pick.title}` });
+  timeline.push({ day, event: `發現線索：${pick.title}`, type: 'main' });
   render();
 }
 
@@ -547,6 +551,12 @@ async function sendToAI(loveEventNpcId) {
 目前已登場的NPC：${npcIntro}。
 ${recentLogText}
 請用第二人稱「你」作為敘事視角，但其他角色對話中應該會直接稱呼玩家的姓名「${player.name}」，而不是只喊「你」。
+
+【角色關係反映規則】世界狀態中每位NPC的信任、尊重、吸引、依賴數值，代表對玩家目前的真實觀感，敘事與對話語氣必須確實對應這些數值：
+- 數值偏低時，語氣保持適度距離、公事公辦，但仍合乎角色本身個性與教養，不能失禮或OOC。
+- 數值中等時，可以透露漸漸卸下防備、願意多說幾句、對玩家多一分留意的跡象。
+- 數值偏高（尤其吸引與依賴），即使角色表面依然克制或冷淡，也要透出不易察覺的真實情緒波動、對玩家的在意或依戀，不能還是像數值低時那樣疏離。
+- 若NPC的 loveEventTriggered 為 true，代表雙方已經歷過心動事件，語氣與互動要保有那次事件帶來的轉變痕跡，不要每次互動都像重新認識一樣。
 
 目前世界狀態（JSON）：
 ${JSON.stringify(worldState)}
@@ -610,8 +620,19 @@ new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展
     }
 
     day++;
+    let eventType = 'general';
+    if (isLoveEvent) {
+      eventType = 'love';
+    } else {
+      const questUpdate = (result.worldUpdates || []).find(u => u.type === 'quest');
+      if (questUpdate) {
+        const targetId = questUpdate.questId || (getMainQuest() && getMainQuest().id);
+        const targetQuest = quests.find(q => q.id === targetId);
+        if (targetQuest) eventType = targetQuest.type;
+      }
+    }
     const eventLabel = isLoveEvent ? `${npcs[loveEventNpcId].name}心動時刻` : (result.summary || text);
-    timeline.push({ day, event: eventLabel });
+    timeline.push({ day, event: eventLabel, type: eventType });
 
     (result.worldUpdates || []).forEach(u => {
       if (isLoveEvent && u.type !== 'relation') return; // 心動事件是獨立過場，不應該夾帶案件或任務的進度變化
