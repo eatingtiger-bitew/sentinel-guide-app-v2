@@ -190,19 +190,20 @@ function updateQuestProgress(questId, amount) {
   }
 }
 
+// 支線任務同時間最多能有幾條「排隊中」（pending）＋「進行中」（active），避免任務無限堆疊
+const MAX_SIDE_QUESTS = 3;
+
 // 觸發新支線的規則（系統把關，AI不可自行決定）：
-// 主線任務必須已完成，且目前不能有另一條進行中的支線，避免任務無限堆疊
+// 不要求主線已完成（支線可以跟主線同時並行冒出來），只檢查支線總數是否已達上限
 function canTriggerNewQuest() {
-  const mainQuest = getMainQuest();
-  if (!mainQuest || mainQuest.status !== "completed") return false;
-  const hasActiveSide = quests.some(q => q.type === "side" && q.status === "active");
-  return !hasActiveSide;
+  const sideCount = quests.filter(q => q.type === "side" && q.status !== "completed").length;
+  return sideCount < MAX_SIDE_QUESTS;
 }
 
 // 新增支線任務：id 一律由系統排號，AI只需提供標題與建議完成長度
-function addNewQuest(title, maxProgress) {
+function addNewQuest(title, maxProgress, npcId) {
   if (!canTriggerNewQuest()) {
-    console.warn('拒絕觸發新任務：主線尚未完成，或已有進行中的支線');
+    console.warn('拒絕觸發新任務：進行中的支線數量已達上限', MAX_SIDE_QUESTS);
     return false;
   }
   if (typeof title !== 'string' || !title.trim()) {
@@ -213,15 +214,35 @@ function addNewQuest(title, maxProgress) {
   if (!Number.isFinite(mp) || mp < 3 || mp > 10) {
     mp = 5; // AI給的數字不合理時，系統給一個安全的預設值
   }
+  // npcId 若AI沒給、或給了但不是已存在的NPC，一律當作沒有關聯對象（按鈕文案會退回通用文字）
+  const validNpcId = (typeof npcId === 'string' && npcs[npcId]) ? npcId : null;
   quests.push({
     id: `quest_${quests.length + 1}`,
     title: title.trim(),
     type: "side",
-    status: "active",
+    status: "pending", // 新支線先排隊，玩家按下「去找◯◯談談」才會翻成 active
     progress: 0,
-    maxProgress: mp
+    maxProgress: mp,
+    npcId: validNpcId
   });
   questUpdatedFlag = true;
+  return true;
+}
+
+// 玩家在任務頁按下「去找◯◯談談」，把指定支線從 pending 翻成 active
+// 同時間只允許一條支線是 active（呼應劇情頁迷你進度條「只顯示這一條」的設計），
+// 如果原本有另一條 active 的支線，會退回 pending（進度保留，不歸零）
+function startSideQuest(questId) {
+  const target = quests.find(q => q.id === questId && q.type === "side");
+  if (!target || target.status !== "pending") {
+    console.warn('拒絕啟動支線：任務不存在或狀態不是 pending', questId);
+    return false;
+  }
+  const currentActive = quests.find(q => q.type === "side" && q.status === "active");
+  if (currentActive) currentActive.status = "pending";
+  target.status = "active";
+  questUpdatedFlag = true;
+  render();
   return true;
 }
 
@@ -384,14 +405,19 @@ function renderQuest() {
   el.innerHTML = quests.map(q => {
     const pct = Math.min(100, (q.progress / q.maxProgress) * 100);
     const done = q.status === "completed";
+    const pending = q.status === "pending";
+    // pending 支線先不顯示進度條（還沒開始跑），改顯示「去找◯◯談談」按鈕
+    const npcName = q.npcId && npcs[q.npcId] ? npcs[q.npcId].name : null;
+    const startLabel = npcName ? `去找${npcName}談談` : '開始這條支線';
     return `
     <div class="card">
-      <h2>${q.title}<span style="font-size:12px; color:#7aa2f7; margin-left:8px;">${typeLabels[q.type] || q.type}</span></h2>
+      <h2>${q.title}<span style="font-size:12px; color:#7aa2f7; margin-left:8px;">${typeLabels[q.type] || q.type}</span>${pending ? '<span style="font-size:12px; color:#999; margin-left:8px;">待處理</span>' : ''}</h2>
+      ${pending ? `<button onclick="startSideQuest('${q.id}')">${startLabel}</button>` : `
       <div class="bar-row">
         <div class="bar-label"><span>進度</span><span>${q.progress} / ${q.maxProgress}</span></div>
         <div class="bar-bg"><div class="bar-fill quest" style="width:${pct}%"></div></div>
       </div>
-      ${done ? '<div class="quest-status">任務完成</div>' : ''}
+      ${done ? '<div class="quest-status">任務完成</div>' : ''}`}
     </div>`;
   }).join('');
 }
@@ -576,7 +602,7 @@ ${JSON.stringify(worldState)}
     { "type": "quest", "questId": "quests 陣列裡對應任務的 id", "amount": 數字（可正可負） },
     { "type": "clue", "clueIndex": "caseFile.clues 陣列中的索引（從0開始），必須選一個 found 為 false、且內容與這次劇情最相關的線索，不要隨便選第一個" },
     { "type": "new_npc", "npcId": "新角色的英文/拼音代稱，需唯一，只能用英文字母數字底線", "name": "新角色姓名", "role": "身份定位，例如：哨兵、嚮導、塔內部人員等" },
-    { "type": "new_quest", "title": "新支線任務的標題", "maxProgress": 完成這條支線大約需要幾次互動推進，建議3到10之間的整數 }
+    { "type": "new_quest", "title": "新支線任務的標題", "maxProgress": 完成這條支線大約需要幾次互動推進，建議3到10之間的整數, "npcId": "如果這條支線明顯跟某位已登場NPC有關，填該NPC的id；無關就留空字串" }
   ]
 }
 worldUpdates 陣列可以是空陣列，也可以包含多筆。如果行動與案件無關，就不要加 quest 或 clue 類型。
@@ -660,7 +686,7 @@ new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展
       } else if (u.type === 'new_npc') {
         addNewNpc(u.npcId, u.name, u.role);
       } else if (u.type === 'new_quest') {
-        addNewQuest(u.title, u.maxProgress);
+        addNewQuest(u.title, u.maxProgress, u.npcId);
       }
     });
 
