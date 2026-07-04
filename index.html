@@ -19,7 +19,8 @@
   #timeline-list { font-size: 14px; color: #ccc; padding-left: 18px; }
   .timeline-main { color: #7aa2f7; }
   .timeline-side { color: #8fd19e; }
-  .timeline-love { color: #e08fb0; }
+  .timeline-love { color: #e0609e; }
+  .timeline-romance { color: #f3b8d0; }
   .timeline-general { color: #ccc; }
   .quest-status { font-size: 13px; color: #6cbf7f; margin-top: 6px; }
   .clue-list { list-style: none; padding: 0; margin: 10px 0 0 0; }
@@ -435,6 +436,7 @@ function render() {
 
   const storyBadge = document.getElementById('story-badge');
   const isStoryTabActive = document.getElementById('tab-story').classList.contains('active');
+  if (isStoryTabActive) storyUpdatedFlag = false; // 人在劇情頁時，任何更新都視為已讀，不留到離開才誤亮
   storyBadge.style.display = (storyUpdatedFlag && !isStoryTabActive) ? 'inline-block' : 'none';
 
   const container = document.getElementById('npc-cards');
@@ -500,6 +502,8 @@ function searchClue() {
 
 async function resolveCase() {
   if (isGenerating) return;
+  storyUpdatedFlag = true; // 按下結案的當下就先亮紅點，不等AI生成完成
+  render();
   const input = document.getElementById('ai-input');
   input.value = `我已經蒐集齊所有線索（${caseFile.clues.map(c => c.title).join('、')}），我要向顧承夜回報，準備結案`;
   await sendToAI();
@@ -613,6 +617,7 @@ new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展
     const result = JSON.parse(rawText);
 
     document.getElementById('story-box').innerText = result.story;
+    storyUpdatedFlag = true; // 劇情頁一律標記有更新，是否顯示紅點交由 render() 判斷目前是否已在該頁
 
     recentStoryLog.push(`玩家行動：${text}\n劇情結果：${result.story}`);
     if (recentStoryLog.length > MAX_RECENT_TURNS) {
@@ -629,6 +634,13 @@ new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展
         const targetId = questUpdate.questId || (getMainQuest() && getMainQuest().id);
         const targetQuest = quests.find(q => q.id === targetId);
         if (targetQuest) eventType = targetQuest.type;
+      }
+      if (eventType === 'general') {
+        const romanceUpdate = (result.worldUpdates || []).find(u =>
+          u.type === 'relation' && npcs[u.npcId] && npcs[u.npcId].canRomance && npcs[u.npcId].loveEventTriggered &&
+          (u.attribute === 'attraction' || u.attribute === 'dependence')
+        );
+        if (romanceUpdate) eventType = 'romance';
       }
     }
     const eventLabel = isLoveEvent ? `${npcs[loveEventNpcId].name}心動時刻` : (result.summary || text);
