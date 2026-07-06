@@ -179,6 +179,7 @@ let storyUpdatedFlag = false;
 function updateQuestProgress(questId, amount) {
   const q = quests.find(q => q.id === questId);
   if (!q) return;
+  if (q.status === "expired") return; // 已逾期的任務不再接受進度更新，避免被誤救回來
   const oldProgress = q.progress;
   const oldStatus = q.status;
   q.progress = Math.max(0, Math.min(q.maxProgress, q.progress + amount));
@@ -196,12 +197,34 @@ const MAX_SIDE_QUESTS = 3;
 // 觸發新支線的規則（系統把關，AI不可自行決定）：
 // 不要求主線已完成（支線可以跟主線同時並行冒出來），只檢查支線總數是否已達上限
 function canTriggerNewQuest() {
-  const sideCount = quests.filter(q => q.type === "side" && q.status !== "completed").length;
+  const sideCount = quests.filter(q => q.type === "side" && q.status !== "completed" && q.status !== "expired").length;
   return sideCount < MAX_SIDE_QUESTS;
 }
 
+// 每次「有意義的一輪行動」發生時呼叫，統一負責推進回合數＋檢查限時任務是否過期
+// （原本 day++ 分散在3個地方各自呼叫，現在統一走這裡，避免之後新增檢查邏輯時漏改）
+function advanceDay() {
+  day++;
+  checkQuestExpirations();
+}
+
+// 檢查所有 pending/active 的支線任務是否已超過期限，過期就標記為 expired
+// 過期任務保留在 quests 陣列裡（任務頁會標註「已逾期」），只是不再佔用支線數量上限
+function checkQuestExpirations() {
+  quests.forEach(q => {
+    if (q.type !== "side") return;
+    if (q.status !== "pending" && q.status !== "active") return;
+    if (typeof q.expiresAt !== "number") return;
+    if (day > q.expiresAt) {
+      q.status = "expired";
+      timeline.push({ day, event: `支線「${q.title}」已逾期`, type: "side" });
+      questUpdatedFlag = true;
+    }
+  });
+}
+
 // 新增支線任務：id 一律由系統排號，AI只需提供標題與建議完成長度
-function addNewQuest(title, maxProgress, npcId) {
+function addNewQuest(title, maxProgress, npcId, durationDays) {
   if (!canTriggerNewQuest()) {
     console.warn('拒絕觸發新任務：進行中的支線數量已達上限', MAX_SIDE_QUESTS);
     return false;
@@ -216,6 +239,9 @@ function addNewQuest(title, maxProgress, npcId) {
   }
   // npcId 若AI沒給、或給了但不是已存在的NPC，一律當作沒有關聯對象（按鈕文案會退回通用文字）
   const validNpcId = (typeof npcId === 'string' && npcs[npcId]) ? npcId : null;
+  // durationDays 若AI沒給、或給的數字不合理，這條支線就是無期限的一般支線
+  const dd = Number(durationDays);
+  const expiresAt = (Number.isFinite(dd) && dd >= 1 && dd <= 5) ? day + dd : null;
   quests.push({
     id: `quest_${quests.length + 1}`,
     title: title.trim(),
@@ -223,7 +249,8 @@ function addNewQuest(title, maxProgress, npcId) {
     status: "pending", // 新支線先排隊，玩家按下「去找◯◯談談」才會翻成 active
     progress: 0,
     maxProgress: mp,
-    npcId: validNpcId
+    npcId: validNpcId,
+    expiresAt
   });
   questUpdatedFlag = true;
   return true;
@@ -406,13 +433,17 @@ function renderQuest() {
     const pct = Math.min(100, (q.progress / q.maxProgress) * 100);
     const done = q.status === "completed";
     const pending = q.status === "pending";
+    const expired = q.status === "expired";
+    // 有期限的任務（pending/active）在標題旁標註還剩幾天
+    const daysLeft = (typeof q.expiresAt === "number" && !expired) ? Math.max(0, q.expiresAt - day) : null;
+    const deadlineTag = daysLeft !== null ? `<span style="font-size:12px; color:#e0a030; margin-left:8px;">剩${daysLeft}天</span>` : '';
     // pending 支線先不顯示進度條（還沒開始跑），改顯示「去找◯◯談談」按鈕
     const npcName = q.npcId && npcs[q.npcId] ? npcs[q.npcId].name : null;
     const startLabel = npcName ? `去找${npcName}談談` : '開始這條支線';
     return `
     <div class="card">
-      <h2>${q.title}<span style="font-size:12px; color:#7aa2f7; margin-left:8px;">${typeLabels[q.type] || q.type}</span>${pending ? '<span style="font-size:12px; color:#999; margin-left:8px;">待處理</span>' : ''}</h2>
-      ${pending ? `<button onclick="startSideQuest('${q.id}')">${startLabel}</button>` : `
+      <h2>${q.title}<span style="font-size:12px; color:#7aa2f7; margin-left:8px;">${typeLabels[q.type] || q.type}</span>${pending ? '<span style="font-size:12px; color:#999; margin-left:8px;">待處理</span>' : ''}${deadlineTag}</h2>
+      ${expired ? '<div class="quest-status" style="color:#999;">已逾期</div>' : pending ? `<button onclick="startSideQuest('${q.id}')">${startLabel}</button>` : `
       <div class="bar-row">
         <div class="bar-label"><span>進度</span><span>${q.progress} / ${q.maxProgress}</span></div>
         <div class="bar-bg"><div class="bar-fill quest" style="width:${pct}%"></div></div>
@@ -490,7 +521,7 @@ function render() {
 }
 
 function doAction(npcId, type) {
-  day++;
+  advanceDay();
   const npc = npcs[npcId];
   if (type === 'mission') {
     adjustRelation(npc, 'trust', 5);
@@ -517,8 +548,7 @@ function doAction(npcId, type) {
 function searchClue() {
   const unfound = caseFile.clues.filter(c => !c.found);
   if (unfound.length === 0) return;
-  day++;
-  const pick = unfound[Math.floor(Math.random() * unfound.length)];
+  advanceDay();
   pick.found = true;
   timeline.push({ day, event: `發現線索：${pick.title}`, type: 'main' });
   render();
@@ -602,12 +632,12 @@ ${JSON.stringify(worldState)}
     { "type": "quest", "questId": "quests 陣列裡對應任務的 id", "amount": 數字（可正可負） },
     { "type": "clue", "clueIndex": "caseFile.clues 陣列中的索引（從0開始），必須選一個 found 為 false、且內容與這次劇情最相關的線索，不要隨便選第一個" },
     { "type": "new_npc", "npcId": "新角色的英文/拼音代稱，需唯一，只能用英文字母數字底線", "name": "新角色姓名", "role": "身份定位，例如：哨兵、嚮導、塔內部人員等" },
-    { "type": "new_quest", "title": "新支線任務的標題", "maxProgress": 完成這條支線大約需要幾次互動推進，建議3到10之間的整數, "npcId": "如果這條支線明顯跟某位已登場NPC有關，填該NPC的id；無關就留空字串" }
+    { "type": "new_quest", "title": "新支線任務的標題", "maxProgress": 完成這條支線大約需要幾次互動推進，建議3到10之間的整數, "npcId": "如果這條支線明顯跟某位已登場NPC有關，填該NPC的id；無關就留空字串", "durationDays": 如果這條支線的劇情設定帶有時間急迫性（例如錯過今天就來不及了），填一個1到5之間的整數代表還剩幾天可以處理；沒有時間壓力的一般支線就填0或留空 }
   ]
 }
 worldUpdates 陣列可以是空陣列，也可以包含多筆。如果行動與案件無關，就不要加 quest 或 clue 類型。
 new_npc 只能在劇情明確讓一位「全新的、有名有姓」的角色登場並產生互動時才使用，不要每次對話都生成新角色，也不要重複生成已經存在於目前 NPC 清單中的角色。
-new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展合理地帶出一個新的調查方向或委託時才使用；如果 canTriggerNewQuest 為 false，絕對不要提出新任務，即使劇情看起來很適合開新支線。`;
+new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展合理地帶出一個新的調查方向或委託時才使用；如果 canTriggerNewQuest 為 false，絕對不要提出新任務，即使劇情看起來很適合開新支線。durationDays 不要每次都填，大部分支線都應該是沒有時間壓力的，只有劇情明確帶出急迫感時才使用。`;
 
   const loveEventPrompt = isLoveEvent ? `
 
@@ -643,8 +673,7 @@ new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展
       recentStoryLog.shift();
     }
 
-    day++;
-    let eventType = 'general';
+    advanceDay();
     if (isLoveEvent) {
       eventType = 'love';
     } else {
@@ -686,7 +715,7 @@ new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展
       } else if (u.type === 'new_npc') {
         addNewNpc(u.npcId, u.name, u.role);
       } else if (u.type === 'new_quest') {
-        addNewQuest(u.title, u.maxProgress, u.npcId);
+        addNewQuest(u.title, u.maxProgress, u.npcId, u.durationDays);
       }
     });
 
