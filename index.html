@@ -549,6 +549,7 @@ function searchClue() {
   const unfound = caseFile.clues.filter(c => !c.found);
   if (unfound.length === 0) return;
   advanceDay();
+  const pick = unfound[Math.floor(Math.random() * unfound.length)];
   pick.found = true;
   timeline.push({ day, event: `發現線索：${pick.title}`, type: 'main' });
   render();
