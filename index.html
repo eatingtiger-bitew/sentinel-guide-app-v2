@@ -675,6 +675,7 @@ new_quest 只能在世界狀態的 canTriggerNewQuest 為 true、且劇情發展
     }
 
     advanceDay();
+    let eventType = 'general';
     if (isLoveEvent) {
       eventType = 'love';
     } else {
